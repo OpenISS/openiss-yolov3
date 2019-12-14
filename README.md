@@ -1,6 +1,6 @@
 # keras-yolo3
 
-[![license](https://img.shields.io/github/license/mashape/apistatus.svg)](LICENSE)
+This repo is a fork from [qqwweee/keras-yolo3](https://github.com/qqwweee/keras-yolo3) hosted on GitHub, with modification to adjust to person re-identification model only (from YOLOv3 object detection model).
 
 ## Introduction
 
