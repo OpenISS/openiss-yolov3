@@ -11,16 +11,19 @@ from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, Ear
 
 from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_loss
 from yolo3.utils import get_random_data
-
+from keras.utils import multi_gpu_model
 
 def _main():
     annotation_path = '2012_train.txt'            # train.txt
-    log_dir = 'logs/000/'
+    log_dir = 'logs/virya/'
     classes_path = 'model_data/voc_person.txt'    # define different class of object
     anchors_path = 'model_data/yolo_anchors.txt'  # anchor configuration file
     class_names = get_classes(classes_path)
     num_classes = len(class_names)
     anchors = get_anchors(anchors_path)
+    gpus = 8
+    train_with_frozen = False
+    train_fine_tune = True
 
     input_shape = (416,416) # multiple of 32, hw
 
@@ -29,14 +32,9 @@ def _main():
         model = create_tiny_model(input_shape, anchors, num_classes,
             freeze_body=2, weights_path='model_data/tiny_yolo_weights.h5')
     else:
-        # model = create_model(input_shape, anchors, num_classes,
-        #     freeze_body=2, weights_path='model_data/yolo_weights.h5') # make sure you know what you freeze
-
-        # **********************************************************************************************************
-        # modify as follow to continue training after the first training part is done below
         model = create_model(input_shape, anchors, num_classes,
-            freeze_body=2, weights_path= log_dir+'trained_weights_stage_1.h5') # make sure you know what you freeze
-        # **********************************************************************************************************
+            freeze_body=2, weights_path='model_data/yolo_weights.h5') # make sure you know what you freeze
+        parallel_model = multi_gpu_model(model, gpus=gpus)
 
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
@@ -55,7 +53,7 @@ def _main():
 
     # Train with frozen layers first, to get a stable loss.
     # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
-    if False:
+    if train_with_frozen:
         model.compile(optimizer=Adam(lr=1e-3), loss={
             # use custom yolo_loss Lambda layer.
             'yolo_loss': lambda y_true, y_pred: y_pred})
@@ -73,22 +71,32 @@ def _main():
 
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
-    if True:
+    if train_fine_tune:
         for i in range(len(model.layers)):
             model.layers[i].trainable = True
         model.compile(optimizer=Adam(lr=1e-4), loss={'yolo_loss': lambda y_true, y_pred: y_pred}) # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 8 # note that more GPU memory is required after unfreezing the body
+        batch_size = 32 # note that more GPU memory is required after unfreezing the body
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
-        model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
-            steps_per_epoch=max(1, num_train//batch_size),
-            validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes),
-            validation_steps=max(1, num_val//batch_size),
-            epochs=100,
-            initial_epoch=50,
-            callbacks=[logging, checkpoint, reduce_lr, early_stopping])
-        model.save_weights(log_dir + 'trained_weights_final.h5')
+        if gpus > 1:
+            parallel_model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
+                steps_per_epoch=max(1, num_train//batch_size),
+                validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes),
+                validation_steps=max(1, num_val//batch_size),
+                epochs=100,
+                initial_epoch=50,
+                callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+                
+        else:
+            model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
+                steps_per_epoch=max(1, num_train//batch_size),
+                validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes),
+                validation_steps=max(1, num_val//batch_size),
+                epochs=100,
+                initial_epoch=50,
+                callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+            model.save_weights(log_dir + 'trained_weights_final.h5')
 
     # Further training if needed.
 
