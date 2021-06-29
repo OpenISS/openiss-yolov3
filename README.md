@@ -1,4 +1,5 @@
 # OpenISS keras-yolo3
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.5042269.svg)](https://doi.org/10.5281/zenodo.5042269)
 
 This repo is a clone from [qqwweee/keras-yolo3](https://github.com/qqwweee/keras-yolo3) hosted on GitHub, with modification to adjust to person re-identification
 model only (from YOLOv3 object detection model). The prediction code is obtained from this [repo](https://github.com/gustavovaliati/keras-yolo3) and adapted to
